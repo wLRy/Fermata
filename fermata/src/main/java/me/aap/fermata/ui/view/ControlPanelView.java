@@ -157,7 +157,7 @@ public class ControlPanelView extends ConstraintLayout implements MainActivityLi
 		int pad = 2 * toIntPx(getContext(), 4) + textPad;
 		int iconSize = (int) (textSize + pad);
 		int panelSize = (int) (size * scale);
-		int buttonSize = (int) (panelSize - textSize - pad);
+		int buttonSize = (int) (panelSize);
 		ControlPanelSeekView seek = findViewById(R.id.seek_bar);
 
 		if (seek.isEnabled()) {
@@ -179,7 +179,7 @@ public class ControlPanelView extends ConstraintLayout implements MainActivityLi
 		}
 
 		setHeight(R.id.control_next, buttonSize);
-		getLayoutParams().height = panelSize;
+		getLayoutParams().width = panelSize * 2;
 	}
 
 	private void seTextAppearance(TextView t, float size) {
