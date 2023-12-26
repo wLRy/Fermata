@@ -3,6 +3,7 @@ package me.aap.fermata.ui.fragment;
 import static android.content.res.Configuration.ORIENTATION_PORTRAIT;
 import static java.util.Collections.singletonList;
 import static java.util.Objects.requireNonNull;
+import static me.aap.fermata.media.engine.MediaEngine.NO_SUBTITLES;
 import static me.aap.fermata.media.pref.BrowsableItemPrefs.SORT_MASK_NAME_RND;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.getGridViewPrefKey;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.hasGridViewPref;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.Set;
 
 import me.aap.fermata.R;
+import me.aap.fermata.media.engine.MediaEngine;
 import me.aap.fermata.media.lib.MediaLib;
 import me.aap.fermata.media.lib.MediaLib.ArchiveItem;
 import me.aap.fermata.media.lib.MediaLib.BrowsableItem;
@@ -284,10 +286,10 @@ public abstract class MediaLibFragment extends MainActivityFragment implements M
 		if (!a.hasSelectable()) return;
 
 		if (a.getListView().isSelectionActive()) {
-			b.addItem(R.id.nav_select_all, R.drawable.check_box, R.string.select_all);
-			b.addItem(R.id.nav_unselect_all, R.drawable.check_box_blank, R.string.unselect_all);
+			b.addItem(R.id.nav_select_all, me.aap.utils.R.drawable.check_box, R.string.select_all);
+			b.addItem(R.id.nav_unselect_all, me.aap.utils.R.drawable.check_box_blank, R.string.unselect_all);
 		} else {
-			b.addItem(R.id.nav_select, R.drawable.check_box, R.string.select);
+			b.addItem(R.id.nav_select, me.aap.utils.R.drawable.check_box, R.string.select);
 		}
 	}
 
@@ -562,6 +564,16 @@ public abstract class MediaLibFragment extends MainActivityFragment implements M
 			discardSelection();
 
 			if (i instanceof PlayableItem) {
+				if (!((PlayableItem) i).isVideo()) {
+					MainActivityDelegate a = getActivityDelegate();
+					MediaEngine eng = a.getMediaSessionCallback().getEngine();
+					if ((eng != null) && (eng.getSource() == i) &&
+							(eng.getCurrentSubtitles() != NO_SUBTITLES)) {
+						a.showFragment(R.id.subtitles_fragment);
+						return;
+					}
+				}
+
 				if (i instanceof StreamItem) {
 					if (clicked == i) {
 						clicked = null;
@@ -613,10 +625,20 @@ public abstract class MediaLibFragment extends MainActivityFragment implements M
 
 		private void onClick(PlayableItem i) {
 			MainActivityDelegate a = getMainActivity();
+
+			if (i.isVideo() && !a.getBody().getVideoView().isSurfaceCreated() &&
+					!a.getMediaSessionCallback().hasCustomEngineProvider()) {
+				a.getBody().setMode(BodyLayout.Mode.VIDEO);
+				a.getBody().getVideoView().onSurfaceCreated(() -> onClick(i));
+				return;
+			}
+
 			FermataServiceUiBinder b = a.getMediaServiceBinder();
 			PlayableItem cur = b.getCurrentItem();
 			b.playItem(i);
-			if (i.equals(cur) && cur.isVideo()) a.getBody().setMode(BodyLayout.Mode.VIDEO);
+			MediaEngine eng = b.getCurrentEngine();
+			if (i.equals(cur) && (eng != null) && eng.isVideoModeRequired())
+				a.getBody().setMode(BodyLayout.Mode.VIDEO);
 		}
 
 		@Override

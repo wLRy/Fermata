@@ -13,11 +13,8 @@ import static me.aap.utils.ui.view.NavBarItem.create;
 import static me.aap.utils.ui.view.NavBarView.POSITION_LEFT;
 import static me.aap.utils.ui.view.NavBarView.POSITION_RIGHT;
 
-import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.Intent;
-import android.net.Uri;
 import android.view.View;
 
 import androidx.annotation.IdRes;
@@ -36,10 +33,12 @@ import me.aap.fermata.R;
 import me.aap.fermata.addon.AddonInfo;
 import me.aap.fermata.addon.AddonManager;
 import me.aap.fermata.addon.FermataAddon;
+import me.aap.fermata.addon.FermataFragmentAddon;
 import me.aap.fermata.ui.activity.MainActivityDelegate;
 import me.aap.fermata.ui.view.BodyLayout;
 import me.aap.fermata.ui.view.ControlPanelView;
 import me.aap.fermata.ui.view.MediaItemListView;
+import me.aap.fermata.util.Utils;
 import me.aap.utils.collection.CollectionUtils;
 import me.aap.utils.function.Supplier;
 import me.aap.utils.holder.IntHolder;
@@ -62,11 +61,14 @@ import me.aap.utils.ui.view.ToolBarView;
 /**
  * @author Andrey Pavlenko
  */
-public class NavBarMediator extends PrefNavBarMediator implements AddonManager.Listener,
-		OverlayMenu.SelectionHandler {
-	private static final Pref<Supplier<String[]>> PREF_B = Pref.sa("NAV_BAR_ITEMS_B", (String[]) null);
-	private static final Pref<Supplier<String[]>> PREF_L = Pref.sa("NAV_BAR_ITEMS_L", (String[]) null);
-	private static final Pref<Supplier<String[]>> PREF_R = Pref.sa("NAV_BAR_ITEMS_R", (String[]) null);
+public class NavBarMediator extends PrefNavBarMediator
+		implements AddonManager.Listener, OverlayMenu.SelectionHandler {
+	private static final Pref<Supplier<String[]>> PREF_B =
+			Pref.sa("NAV_BAR_ITEMS_B", (String[]) null);
+	private static final Pref<Supplier<String[]>> PREF_L =
+			Pref.sa("NAV_BAR_ITEMS_L", (String[]) null);
+	private static final Pref<Supplier<String[]>> PREF_R =
+			Pref.sa("NAV_BAR_ITEMS_R", (String[]) null);
 
 	@Override
 	protected Collection<NavBarItem> getItems(NavBarView nb) {
@@ -79,24 +81,25 @@ public class NavBarMediator extends PrefNavBarMediator implements AddonManager.L
 		for (String name : names) {
 			switch (name) {
 				case "folders":
-					items.add(create(ctx, R.id.folders_fragment, R.drawable.folder,
+					items.add(create(ctx, R.id.folders_fragment, me.aap.utils.R.drawable.folder,
 							R.string.folders, items.size() < max));
 					continue;
 				case "favorites":
-					items.add(create(ctx, R.id.favorites_fragment, R.drawable.favorite_filled,
-							R.string.favorites, items.size() < max));
+					items.add(
+							create(ctx, R.id.favorites_fragment, R.drawable.favorite_filled, R.string.favorites,
+									items.size() < max));
 					continue;
 				case "playlists":
-					items.add(create(ctx, R.id.playlists_fragment, R.drawable.playlist,
-							R.string.playlists, items.size() < max));
+					items.add(create(ctx, R.id.playlists_fragment, R.drawable.playlist, R.string.playlists,
+							items.size() < max));
 					continue;
 				case "menu":
-					items.add(create(ctx, R.id.menu, R.drawable.menu, R.string.menu, items.size() < max));
+					items.add(create(ctx, R.id.menu, me.aap.utils.R.drawable.menu, R.string.menu, items.size() < max));
 					continue;
 			}
 
 			FermataAddon a = amgr.getAddon(name);
-			if (a != null) {
+			if (a instanceof FermataFragmentAddon) {
 				AddonInfo ai = a.getInfo();
 				items.add(create(ctx, a.getAddonId(), ai.icon, ai.addonName, items.size() < max));
 				continue;
@@ -252,7 +255,7 @@ public class NavBarMediator extends PrefNavBarMediator implements AddonManager.L
 			return true;
 		} else if (itemId == R.id.nav_about) {
 			MainActivityDelegate a = MainActivityDelegate.get(item.getContext());
-			GenericFragment f = a.showFragment(R.id.generic_fragment);
+			GenericFragment f = a.showFragment(me.aap.utils.R.id.generic_fragment);
 			f.setTitle(item.getContext().getString(R.string.about));
 			f.setContentProvider(g -> {
 				Context ctx = g.getContext();
@@ -281,26 +284,21 @@ public class NavBarMediator extends PrefNavBarMediator implements AddonManager.L
 			DialogInterface.OnClickListener ok = (d, i) -> {
 				IntHolder selection = new IntHolder();
 				String[] wallets = new String[]{"PayPal", "CloudTips", "Yandex",};
-				String[] urls = new String[]{
-						"https://paypal.me/AndrewPavlenko",
-						"https://pay.cloudtips.ru/p/a03a73da",
-						"https://yoomoney.ru/to/410014661137336"
-				};
+				String[] urls =
+						new String[]{"https://www.paypal.com/donate/?hosted_button_id=NP5Q3YDSCJ98N",
+								"https://pay.cloudtips.ru/p/a03a73da", "https://yoomoney.ru/to/410014661137336"};
 
-				a.createDialogBuilder()
-						.setTitle(R.drawable.coffee, R.string.donate)
+				a.createDialogBuilder().setTitle(R.drawable.coffee, R.string.donate)
 						.setSingleChoiceItems(wallets, 0, (dlg, which) -> selection.value = which)
 						.setNegativeButton(android.R.string.cancel, null)
-						.setPositiveButton(android.R.string.ok, (d1, w1) -> openUrl(ctx, urls[selection.value]))
+						.setPositiveButton(android.R.string.ok, (d1, w1) -> openUrl(ctx,
+								urls[selection.value]))
 						.show();
 			};
 
-			a.createDialogBuilder()
-					.setTitle(R.drawable.coffee, R.string.donate)
-					.setMessage(R.string.donate_text)
-					.setNegativeButton(android.R.string.cancel, null)
-					.setPositiveButton(android.R.string.ok, ok)
-					.show();
+			a.createDialogBuilder().setTitle(R.drawable.coffee, R.string.donate)
+					.setMessage(R.string.donate_text).setNegativeButton(android.R.string.cancel, null)
+					.setPositiveButton(android.R.string.ok, ok).show();
 
 			return true;
 		}
@@ -309,36 +307,7 @@ public class NavBarMediator extends PrefNavBarMediator implements AddonManager.L
 	}
 
 	private static void openUrl(Context ctx, String url) {
-		MainActivityDelegate a = MainActivityDelegate.get(ctx);
-
-		if (a.isCarActivity()) {
-			if (!openUrlInBrowserFragment(a, url)) showInfo(ctx, R.string.use_phone_for_donation);
-			return;
-		}
-
-		Uri u = Uri.parse(url);
-		Intent intent = new Intent(Intent.ACTION_VIEW, u);
-		intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-
-		try {
-			a.startActivity(intent);
-		} catch (ActivityNotFoundException ex) {
-			if (openUrlInBrowserFragment(a, url)) return;
-
-			String msg = ctx.getResources().getString(R.string.err_failed_open_url, u);
-			a.createDialogBuilder().setMessage(msg)
-					.setPositiveButton(android.R.string.ok, null).show();
-		}
-	}
-
-	private static boolean openUrlInBrowserFragment(MainActivityDelegate a, String url) {
-		try {
-			a.showFragment(R.id.web_browser_fragment).setInput(url);
-			return true;
-		} catch (Exception ex) {
-			Log.d(ex);
-			return false;
-		}
+		if (!Utils.openUrl(ctx, url)) showInfo(ctx, R.string.use_phone_for_donation);
 	}
 
 	private Collection<String> getLayout(NavBarView nb) {
@@ -351,7 +320,7 @@ public class NavBarMediator extends PrefNavBarMediator implements AddonManager.L
 		names.add("playlists");
 		for (AddonInfo ai : BuildConfig.ADDONS) {
 			FermataAddon a = amgr.getAddon(ai.className);
-			if (a != null) names.add(ai.className);
+			if (a instanceof FermataFragmentAddon) names.add(ai.className);
 		}
 		names.add("menu");
 		return names;
@@ -366,7 +335,7 @@ public class NavBarMediator extends PrefNavBarMediator implements AddonManager.L
 		AddonManager amgr = getAddonManager();
 		for (AddonInfo ai : BuildConfig.ADDONS) {
 			FermataAddon a = amgr.getAddon(ai.className);
-			if ((a != null) && (a.getAddonId() == id)) return ai.className;
+			if ((a instanceof FermataFragmentAddon) && (a.getAddonId() == id)) return ai.className;
 		}
 
 		Log.e("Unknown NavBarItem id: ", id);

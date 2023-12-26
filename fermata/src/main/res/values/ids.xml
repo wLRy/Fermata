@@ -29,9 +29,13 @@
     <item name="playlists_fragment" type="id" />
     <item name="settings_fragment" type="id" />
     <item name="audio_effects_fragment" type="id" />
+    <item name="subtitles_fragment" type="id" />
     <item name="tv_fragment" type="id" />
     <item name="youtube_fragment" type="id" />
     <item name="web_browser_fragment" type="id" />
+    <item name="felex_fragment" type="id" />
+    <item name="cast_addon" type="id" />
+    <item name="chat_addon" type="id" />
 
     <item name="nav_got_to_current" type="id" />
     <item name="nav_donate" type="id" />
@@ -67,6 +71,10 @@
     <item name="video_scaling_orig" type="id" />
     <item name="video_scaling_4" type="id" />
     <item name="video_scaling_16" type="id" />
+    <item name="hw_accel_auto" type="id" />
+    <item name="hw_accel_full" type="id" />
+    <item name="hw_accel_decoding" type="id" />
+    <item name="hw_accel_disabled" type="id" />
     <item name="preferred_media_engine" type="id" />
     <item name="preferred_video_engine" type="id" />
     <item name="preferred_audio_engine" type="id" />
@@ -122,5 +130,10 @@
     <item name="m3u_playlist" type="id" />
 
     <item name="car_edit_text" type="id" />
+    <item name="share" type="id" />
+
+    <item name="auto" type="id" />
+
+    <item name="cursor" type="id" />
 
 </resources>

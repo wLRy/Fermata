@@ -12,8 +12,7 @@ import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 import static android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static me.aap.fermata.BuildConfig.AUTO;
-import static me.aap.fermata.media.pref.PlaybackControlPrefs.NEXT_VOICE_CONTROl;
-import static me.aap.fermata.media.pref.PlaybackControlPrefs.PREV_VOICE_CONTROl;
+import static me.aap.fermata.action.KeyEventHandler.handleKeyEvent;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.BRIGHTNESS;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.CHANGE_BRIGHTNESS;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.CLOCK_POS;
@@ -21,8 +20,9 @@ import static me.aap.fermata.ui.activity.MainActivityPrefs.LOCALE;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROL_SUBST;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROl_ENABLED;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROl_FB;
-import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROl_M;
 import static me.aap.utils.async.Completed.completed;
+import static me.aap.utils.async.Completed.completedVoid;
+import static me.aap.utils.async.Completed.failed;
 import static me.aap.utils.function.ResultConsumer.Cancel.isCancellation;
 import static me.aap.utils.ui.UiUtils.ID_NULL;
 import static me.aap.utils.ui.UiUtils.showAlert;
@@ -58,7 +58,6 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
-import android.widget.Toast;
 
 import androidx.annotation.LayoutRes;
 import androidx.annotation.NonNull;
@@ -73,6 +72,7 @@ import androidx.fragment.app.Fragment;
 import com.google.android.material.textview.MaterialTextView;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedList;
@@ -81,14 +81,19 @@ import java.util.Locale;
 
 import me.aap.fermata.FermataApplication;
 import me.aap.fermata.R;
+import me.aap.fermata.action.Action;
+import me.aap.fermata.action.Key;
 import me.aap.fermata.addon.AddonManager;
+import me.aap.fermata.addon.FermataActivityAddon;
 import me.aap.fermata.addon.FermataAddon;
+import me.aap.fermata.addon.FermataFragmentAddon;
 import me.aap.fermata.addon.MediaLibAddon;
 import me.aap.fermata.media.engine.MediaEngineManager;
 import me.aap.fermata.media.lib.AtvInterface;
 import me.aap.fermata.media.lib.DefaultMediaLib;
 import me.aap.fermata.media.lib.ExportedItem;
 import me.aap.fermata.media.lib.ExtRoot;
+import me.aap.fermata.media.lib.IntentPlayable;
 import me.aap.fermata.media.lib.MediaLib;
 import me.aap.fermata.media.lib.MediaLib.BrowsableItem;
 import me.aap.fermata.media.lib.MediaLib.Item;
@@ -107,6 +112,7 @@ import me.aap.fermata.ui.fragment.MediaLibFragment;
 import me.aap.fermata.ui.fragment.NavBarMediator;
 import me.aap.fermata.ui.fragment.PlaylistsFragment;
 import me.aap.fermata.ui.fragment.SettingsFragment;
+import me.aap.fermata.ui.fragment.SubtitlesFragment;
 import me.aap.fermata.ui.view.BodyLayout;
 import me.aap.fermata.ui.view.ControlPanelView;
 import me.aap.fermata.ui.view.VideoView;
@@ -115,14 +121,12 @@ import me.aap.utils.async.FutureSupplier;
 import me.aap.utils.async.Promise;
 import me.aap.utils.concurrent.HandlerExecutor;
 import me.aap.utils.event.ListenerLeakDetector;
-import me.aap.utils.function.BooleanSupplier;
 import me.aap.utils.function.Cancellable;
-import me.aap.utils.function.DoubleSupplier;
 import me.aap.utils.function.Function;
 import me.aap.utils.function.IntObjectFunction;
-import me.aap.utils.function.IntSupplier;
 import me.aap.utils.function.Supplier;
 import me.aap.utils.log.Log;
+import me.aap.utils.misc.MiscUtils;
 import me.aap.utils.pref.PreferenceStore;
 import me.aap.utils.ui.UiUtils;
 import me.aap.utils.ui.activity.ActivityDelegate;
@@ -137,8 +141,8 @@ import me.aap.utils.ui.view.ToolBarView;
 /**
  * @author Andrey Pavlenko
  */
-public class MainActivityDelegate extends ActivityDelegate implements
-		MediaSessionCallbackAssistant, PreferenceStore.Listener {
+public class MainActivityDelegate extends ActivityDelegate
+		implements MediaSessionCallbackAssistant, PreferenceStore.Listener {
 	public static final String INTENT_ACTION_OPEN = "open";
 	public static final String INTENT_ACTION_PLAY = "play";
 	public static final String INTENT_ACTION_UPDATE = "update";
@@ -155,7 +159,6 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	private FutureSupplier<?> contentLoading;
 	private boolean barsHidden;
 	private boolean videoMode;
-	private boolean exitPressed;
 	private int brightness = 255;
 	private SpeechListener speechListener;
 	private VoiceCommandHandler voiceCommandHandler;
@@ -229,12 +232,18 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		if (b.getCurrentItem() == null) b.getMediaSessionCallback().onPrepare();
 		init();
 
+		for (FermataAddon addon : AddonManager.get().getAddons()) {
+			if (addon instanceof FermataActivityAddon)
+				((FermataActivityAddon) addon).onActivityCreate(this);
+		}
+
 		String[] perms = getRequiredPermissions();
 		a.checkPermissions(perms).onCompletion((result, fail) -> {
 			if (fail != null) {
 				if (!isCarActivity()) Log.e(fail);
 			} else {
-				Log.d("Requested permissions: ", Arrays.toString(perms), ". Result: " + Arrays.toString(result));
+				Log.d("Requested permissions: ", Arrays.toString(perms),
+						". Result: " + Arrays.toString(result));
 			}
 
 			if (fragmentId != ID_NULL) {
@@ -263,22 +272,40 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	}
 
 	private FutureSupplier<Boolean> handleIntent(Intent intent) {
-		Uri u = intent.getData();
-		if (u == null) return completed(false);
-		String action = u.getHost();
-		if (action == null) return completed(false);
-		String id = u.getPath();
-		if (id == null) return completed(false);
-		id = new String(Base64.decode(id.substring(1), URL_SAFE), US_ASCII);
+		for (FermataAddon a : AddonManager.get().getAddons()) {
+			if (a.handleIntent(this, intent)) return completed(true);
+		}
 
-		if (INTENT_ACTION_OPEN.equals(action)) {
-			goToItem(id).map(i -> i != null);
-		} else if (INTENT_ACTION_PLAY.equals(action)) {
-			goToItem(id).map(i -> {
-				if (!(i instanceof PlayableItem)) return false;
-				getMediaServiceBinder().playItem((PlayableItem) i);
-				return true;
-			});
+		Uri u = intent.getData();
+
+		if (u != null) {
+			if (INTENT_SCHEME.equals(u.getScheme())) {
+				String action = u.getHost();
+				if (action == null) return completed(false);
+				String id = u.getPath();
+				if (id == null) return completed(false);
+				id = new String(Base64.decode(id.substring(1), URL_SAFE), US_ASCII);
+
+				if (INTENT_ACTION_OPEN.equals(action)) {
+					goToItem(id).map(MiscUtils::nonNull);
+					return completed(true);
+				} else if (INTENT_ACTION_PLAY.equals(action)) {
+					goToItem(id).map(i -> {
+						if (!(i instanceof PlayableItem)) return false;
+						getMediaServiceBinder().playItem((PlayableItem) i);
+						return true;
+					});
+					return completed(true);
+				}
+			} else if (Intent.ACTION_VIEW.equals(intent.getAction())) {
+				PlayableItem i = new IntentPlayable(this, u);
+				getMediaServiceBinder().stop();
+				post(() -> {
+					if (!(getActiveFragment() instanceof MediaLibFragment))
+						goToCurrent().onSuccess(v -> getMediaServiceBinder().playItem(i));
+					else getMediaServiceBinder().playItem(i);
+				});
+			}
 		}
 
 		return completed(false);
@@ -290,8 +317,8 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		if (showAddon != null) {
 			FermataAddon addon = AddonManager.get().getAddon(showAddon);
 
-			if (addon != null) {
-				showFragment(addon.getFragmentId());
+			if (addon instanceof FermataFragmentAddon) {
+				showFragment(((FermataFragmentAddon) addon).getFragmentId());
 				checkUpdates();
 				return;
 			}
@@ -340,6 +367,19 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	@Override
 	public void onActivityResume() {
 		super.onActivityResume();
+		for (FermataAddon addon : AddonManager.get().getAddons()) {
+			if (addon instanceof FermataActivityAddon)
+				((FermataActivityAddon) addon).onActivityResume(this);
+		}
+	}
+
+	@Override
+	protected void onActivityPause() {
+		super.onActivityPause();
+		for (FermataAddon addon : AddonManager.get().getAddons()) {
+			if (addon instanceof FermataActivityAddon)
+				((FermataActivityAddon) addon).onActivityPause(this);
+		}
 	}
 
 	@Override
@@ -350,15 +390,22 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		getPrefs().removeBroadcastListener(this);
 		if (speechListener != null) speechListener.destroy();
 
+		for (FermataAddon addon : AddonManager.get().getAddons()) {
+			if (addon instanceof FermataActivityAddon)
+				((FermataActivityAddon) addon).onActivityDestroy(this);
+		}
+
 		if (me.aap.utils.BuildConfig.D) {
 			boolean leaks = ListenerLeakDetector.hasLeaks((b, l) -> {
 				if (l instanceof ExportedItem.ListenerWrapper)
 					l = ((ExportedItem.ListenerWrapper) l).getListener();
+				if (l instanceof Key.PrefsListener) return false;
 				if (l instanceof FermataAddon) return false;
 				if (l instanceof AtvInterface) return false;
 				if ((l instanceof DefaultMediaLib) && (b instanceof DefaultMediaLib)) return false;
 				if ((l instanceof MediaEngineManager) && (b instanceof DefaultMediaLib)) return false;
-				return (!(l instanceof AddonManager)) || (b != FermataApplication.get().getPreferenceStore());
+				return (!(l instanceof AddonManager)) ||
+						(b != FermataApplication.get().getPreferenceStore());
 			});
 			if (leaks) throw new IllegalStateException("Listener leaks detected!");
 		}
@@ -391,23 +438,14 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	@SuppressWarnings("deprecation")
 	public static void setTheme(FermataActivity a) {
 		switch (Prefs.instance.getThemePref(a.isCarActivity())) {
-			default:
-			case MainActivityPrefs.THEME_DARK:
-				a.setTheme(R.style.AppTheme_Dark);
-				break;
-			case MainActivityPrefs.THEME_LIGHT:
-				a.setTheme(R.style.AppTheme_Light);
-				break;
-			case MainActivityPrefs.THEME_DAY_NIGHT:
+			case MainActivityPrefs.THEME_DARK -> a.setTheme(R.style.AppTheme_Dark);
+			case MainActivityPrefs.THEME_LIGHT -> a.setTheme(R.style.AppTheme_Light);
+			case MainActivityPrefs.THEME_DAY_NIGHT -> {
 				AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_AUTO_TIME);
 				a.setTheme(R.style.AppTheme_DayNight);
-				break;
-			case MainActivityPrefs.THEME_BLACK:
-				a.setTheme(R.style.AppTheme_Black);
-				break;
-			case MainActivityPrefs.THEME_STAR_WARS:
-				a.setTheme(R.style.AppTheme_BlackStarWars);
-				break;
+			}
+			case MainActivityPrefs.THEME_BLACK -> a.setTheme(R.style.AppTheme_Black);
+			case MainActivityPrefs.THEME_STAR_WARS -> a.setTheme(R.style.AppTheme_BlackStarWars);
 		}
 	}
 
@@ -529,12 +567,12 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		if (videoMode) {
 			this.videoMode = true;
 			setSystemUiVisibility();
-			getWindow().addFlags(FLAG_KEEP_SCREEN_ON);
+			keepScreenOn(true);
 			cp.enableVideoMode(v);
 		} else {
 			this.videoMode = false;
 			setSystemUiVisibility();
-			getWindow().clearFlags(FLAG_KEEP_SCREEN_ON);
+			keepScreenOn(false);
 			if (cp != null) cp.disableVideoMode();
 		}
 
@@ -557,6 +595,11 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		}
 
 		fireBroadcastEvent(FRAGMENT_CONTENT_CHANGED);
+	}
+
+	public void keepScreenOn(boolean on) {
+		if (on) getWindow().addFlags(FLAG_KEEP_SCREEN_ON);
+		else getWindow().clearFlags(FLAG_KEEP_SCREEN_ON);
 	}
 
 	public int getBrightness() {
@@ -622,6 +665,8 @@ public class MainActivityDelegate extends ActivityDelegate implements
 			return new SettingsFragment();
 		} else if (id == R.id.audio_effects_fragment) {
 			return new AudioEffectsFragment();
+		} else if (id == R.id.subtitles_fragment) {
+			return new SubtitlesFragment();
 		}
 		ActivityFragment f = FermataApplication.get().getAddonManager().createFragment(id);
 		return (f != null) ? f : super.createFragment(id);
@@ -642,8 +687,7 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	@Nullable
 	public MediaLibFragment getMediaLibFragment(int id) {
 		for (Fragment f : getSupportFragmentManager().getFragments()) {
-			if (!(f instanceof MediaLibFragment)) continue;
-			MediaLibFragment m = (MediaLibFragment) f;
+			if (!(f instanceof MediaLibFragment m)) continue;
 			if (m.getFragmentId() == id) return m;
 		}
 
@@ -657,8 +701,8 @@ public class MainActivityDelegate extends ActivityDelegate implements
 
 	public FutureSupplier<Boolean> goToCurrent() {
 		PlayableItem pi = getMediaServiceBinder().getCurrentItem();
-		return (pi == null) ? getLib().getLastPlayedItem().main().map(this::goToItem)
-				: completed(goToItem(pi));
+		return ((pi == null) || (pi.isExternal())) ?
+				getLib().getLastPlayedItem().main().map(this::goToItem) : completed(goToItem(pi));
 	}
 
 	public FutureSupplier<Item> goToItem(String id) {
@@ -683,7 +727,7 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		} else {
 			MediaLibAddon a = AddonManager.get().getMediaLibAddon(root);
 			if (a != null) {
-				showFragment(a.getAddonId());
+				showFragment(a.getFragmentId());
 			} else {
 				Log.d("Unsupported item: ", i);
 				return false;
@@ -701,6 +745,11 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	}
 
 	@Override
+	protected boolean exitOnBackPressed() {
+		return !isCarActivity();
+	}
+
+	@Override
 	public OverlayMenu createMenu(View anchor) {
 		return findViewById(R.id.context_menu);
 	}
@@ -713,19 +762,10 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		return findViewById(R.id.tool_menu);
 	}
 
-	public void startVoiceSearch() {
-		View focus = getCurrentFocus();
-		FutureSupplier<int[]> check = isCarActivity()
-				? completed(new int[]{PERMISSION_GRANTED})
-				: getAppActivity().checkPermissions(Manifest.permission.RECORD_AUDIO);
-		check.onCompletion((r, err) -> {
-			if ((err == null) && (r[0] == PERMISSION_GRANTED)) {
-				voiceSearch(focus);
-				return;
-			}
-			if (err != null) Log.e(err, "Failed to request RECORD_AUDIO permission");
-			showAlert(getContext(), R.string.err_no_audio_record_perm);
-		});
+	public void startVoiceAssistant() {
+		ActivityFragment f = getActiveFragment();
+		if (!(f instanceof MainActivityFragment) || !((MainActivityFragment) f).startVoiceAssistant())
+			voiceSearch(getCurrentFocus());
 	}
 
 	private void voiceSearch(View focus) {
@@ -744,19 +784,30 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	}
 
 	public FutureSupplier<List<String>> startSpeechRecognizer() {
-		return startSpeechRecognizer(false);
+		return startSpeechRecognizer(null, false);
 	}
 
-	public FutureSupplier<List<String>> startSpeechRecognizer(boolean textInput) {
-		if (speechListener != null) speechListener.destroy();
-		Promise<List<String>> p = new Promise<>();
-		Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-		i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
-		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-		speechListener = new SpeechListener(p, textInput);
-		speechListener.start(i);
-		return p;
+	public FutureSupplier<List<String>> startSpeechRecognizer(String locale, boolean textInput) {
+		FutureSupplier<int[]> check = isCarActivity() ? completed(new int[]{PERMISSION_GRANTED}) :
+				getAppActivity().checkPermissions(Manifest.permission.RECORD_AUDIO);
+		return check.then(r -> {
+			if (r[0] == PERMISSION_GRANTED) return completedVoid();
+			else return failed(new IllegalStateException("Audio recording permission is not granted"));
+		}).onFailure(err -> {
+			Log.e(err, "Failed to request RECORD_AUDIO permission");
+			showAlert(getContext(), R.string.err_no_audio_record_perm);
+		}).then(v -> {
+			if (speechListener != null) speechListener.destroy();
+			Promise<List<String>> p = new Promise<>();
+			String lang = (locale == null) ? getPrefs().getVoiceControlLang(this) : locale;
+			Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+			i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+			i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang);
+			i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+			speechListener = new SpeechListener(p, textInput);
+			speechListener.start(i);
+			return p;
+		});
 	}
 
 	@NonNull
@@ -765,8 +816,8 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		MediaLibFragment f = getActiveMediaLibFragment();
 		if (f == null) return MediaSessionCallbackAssistant.super.getPrevPlayable(i);
 		BrowsableItem p = f.getAdapter().getParent();
-		return (p instanceof SearchFolder) ? ((SearchFolder) p).getPrevPlayable(i)
-				: MediaSessionCallbackAssistant.super.getPrevPlayable(i);
+		return (p instanceof SearchFolder) ? ((SearchFolder) p).getPrevPlayable(i) :
+				MediaSessionCallbackAssistant.super.getPrevPlayable(i);
 	}
 
 	@NonNull
@@ -775,8 +826,8 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		MediaLibFragment f = getActiveMediaLibFragment();
 		if (f == null) return MediaSessionCallbackAssistant.super.getNextPlayable(i);
 		BrowsableItem p = f.getAdapter().getParent();
-		return (p instanceof SearchFolder) ? ((SearchFolder) p).getNextPlayable(i)
-				: MediaSessionCallbackAssistant.super.getNextPlayable(i);
+		return (p instanceof SearchFolder) ? ((SearchFolder) p).getNextPlayable(i) :
+				MediaSessionCallbackAssistant.super.getNextPlayable(i);
 	}
 
 	@Override
@@ -796,7 +847,8 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		return DialogBuilder.create(getContextMenu());
 	}
 
-	public void addPlaylistMenu(OverlayMenu.Builder builder, FutureSupplier<List<PlayableItem>> selection) {
+	public void addPlaylistMenu(OverlayMenu.Builder builder,
+															FutureSupplier<List<PlayableItem>> selection) {
 		addPlaylistMenu(builder, () -> selection, () -> "");
 	}
 
@@ -825,21 +877,19 @@ public class MainActivityDelegate extends ActivityDelegate implements
 
 	private boolean createPlaylist(FutureSupplier<List<PlayableItem>> selection,
 																 Supplier<? extends CharSequence> initName) {
-		UiUtils.queryText(getContext(), R.string.playlist_name, R.drawable.playlist,
-				initName.get()).onSuccess(name -> {
-			discardSelection();
-			if (name == null) return;
+		UiUtils.queryText(getContext(), R.string.playlist_name, R.drawable.playlist, initName.get())
+				.onSuccess(name -> {
+					discardSelection();
+					if (name == null) return;
 
-			getLib().getPlaylists().addItem(name)
-					.onFailure(err -> showAlert(getContext(), err.getMessage()))
-					.then(pl -> selection.main().then(items -> pl.addItems(items)
-							.onFailure(err -> showAlert(getContext(), err.getMessage()))
-							.thenRun(() -> {
-								MediaLibFragment f = getMediaLibFragment(R.id.playlists_fragment);
-								if (f != null) f.getAdapter().reload();
-							}))
-					);
-		});
+					getLib().getPlaylists().addItem(name)
+							.onFailure(err -> showAlert(getContext(), err.getMessage())).then(
+									pl -> selection.main().then(items -> pl.addItems(items)
+											.onFailure(err -> showAlert(getContext(), err.getMessage())).thenRun(() -> {
+												MediaLibFragment f = getMediaLibFragment(R.id.playlists_fragment);
+												if (f != null) f.getAdapter().reload();
+											})));
+				});
 		return true;
 	}
 
@@ -864,8 +914,7 @@ public class MainActivityDelegate extends ActivityDelegate implements
 
 	public void removeFromPlaylist(Playlist pl, List<PlayableItem> selection) {
 		discardSelection();
-		pl.removeItems(selection)
-				.onFailure(err -> showAlert(getContext(), err.getMessage()))
+		pl.removeItems(selection).onFailure(err -> showAlert(getContext(), err.getMessage()))
 				.thenRun(() -> {
 					MediaLibFragment f = getMediaLibFragment(R.id.playlists_fragment);
 					if (f != null) f.getAdapter().reload();
@@ -898,26 +947,31 @@ public class MainActivityDelegate extends ActivityDelegate implements
 	@LayoutRes
 	private int getLayout() {
 		MainActivityPrefs prefs = getPrefs();
-
-		switch (prefs.getNavBarPosPref(this)) {
-			default:
-				return R.layout.main_activity;
-			case NavBarView.POSITION_LEFT:
-				return R.layout.main_activity_left;
-			case NavBarView.POSITION_RIGHT:
-				return R.layout.main_activity_right;
-		}
+		return switch (prefs.getNavBarPosPref(this)) {
+			default -> R.layout.main_activity;
+			case NavBarView.POSITION_LEFT -> R.layout.main_activity_left;
+			case NavBarView.POSITION_RIGHT -> R.layout.main_activity_right;
+		};
 	}
 
 	private static String[] getRequiredPermissions() {
-		if (VERSION.SDK_INT >= VERSION_CODES.Q) {
-			return new String[]{permission.READ_EXTERNAL_STORAGE, permission.FOREGROUND_SERVICE,
-					permission.ACCESS_MEDIA_LOCATION, permission.USE_FULL_SCREEN_INTENT};
-		} else if (VERSION.SDK_INT >= VERSION_CODES.P) {
-			return new String[]{permission.READ_EXTERNAL_STORAGE, permission.FOREGROUND_SERVICE};
-		} else {
-			return new String[]{permission.READ_EXTERNAL_STORAGE};
+		List<String> perms = new ArrayList<>();
+		perms.add(permission.READ_EXTERNAL_STORAGE);
+		if (VERSION.SDK_INT >= VERSION_CODES.P) {
+			perms.add(permission.FOREGROUND_SERVICE);
 		}
+		if (VERSION.SDK_INT >= VERSION_CODES.Q) {
+			perms.add(permission.ACCESS_MEDIA_LOCATION);
+			perms.add(permission.USE_FULL_SCREEN_INTENT);
+		}
+		if (VERSION.SDK_INT >= VERSION_CODES.TIRAMISU) {
+			perms.add(permission.USE_FULL_SCREEN_INTENT);
+			perms.add(permission.POST_NOTIFICATIONS);
+		}
+		if (VERSION.SDK_INT >= VERSION_CODES.UPSIDE_DOWN_CAKE) {
+			perms.add(permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK);
+		}
+		return perms.toArray(new String[0]);
 	}
 
 	@Override
@@ -946,29 +1000,14 @@ public class MainActivityDelegate extends ActivityDelegate implements
 			if (isVideoMode()) setBrightness(getPrefs().getBrightnessPref());
 		} else if (prefs.contains(VOICE_CONTROl_ENABLED)) {
 			if (!getPrefs().getVoiceControlEnabledPref()) {
-				try (PreferenceStore.Edit e = getPrefs().editPreferenceStore()) {
-					e.setBooleanPref(VOICE_CONTROl_FB, false);
-					e.setBooleanPref(VOICE_CONTROl_M, false);
-				}
-				try (PreferenceStore.Edit e = getPlaybackControlPrefs().editPreferenceStore()) {
-					e.setBooleanPref(NEXT_VOICE_CONTROl, false);
-					e.setBooleanPref(PREV_VOICE_CONTROl, false);
-				}
+				getPrefs().applyBooleanPref(VOICE_CONTROl_FB, false);
 				return;
 			}
 			getAppActivity().checkPermissions(permission.RECORD_AUDIO).onCompletion((r, err) -> {
 				if ((err == null) && (r[0] == PERMISSION_GRANTED)) return;
 				if (err != null) Log.e(err, "Failed to request RECORD_AUDIO permission");
 				showAlert(getContext(), R.string.err_no_audio_record_perm);
-				try (PreferenceStore.Edit e = getPrefs().editPreferenceStore()) {
-					e.setBooleanPref(VOICE_CONTROl_ENABLED, false);
-					e.setBooleanPref(VOICE_CONTROl_FB, false);
-					e.setBooleanPref(VOICE_CONTROl_M, false);
-				}
-				try (PreferenceStore.Edit e = getPlaybackControlPrefs().editPreferenceStore()) {
-					e.setBooleanPref(NEXT_VOICE_CONTROl, false);
-					e.setBooleanPref(PREV_VOICE_CONTROl, false);
-				}
+				getPrefs().applyBooleanPref(VOICE_CONTROl_FB, false);
 			});
 		} else if (prefs.contains(VOICE_CONTROL_SUBST)) {
 			if (voiceCommandHandler != null) voiceCommandHandler.updateWordSubst();
@@ -981,68 +1020,18 @@ public class MainActivityDelegate extends ActivityDelegate implements
 
 	@Override
 	public boolean onKeyDown(int code, KeyEvent event, IntObjectFunction<KeyEvent, Boolean> next) {
-		switch (code) {
-			case KeyEvent.KEYCODE_BACK:
-			case KeyEvent.KEYCODE_ESCAPE:
-				onBackPressed();
-				return true;
-			case KeyEvent.KEYCODE_M:
-				if (getCurrentFocus() instanceof EditText) return super.onKeyDown(code, event, next);
-			case KeyEvent.KEYCODE_MENU:
-				if (getPrefs().getVoiceControlMenuPref()) event.startTracking();
-				return true;
-			case KeyEvent.KEYCODE_P:
-				getMediaServiceBinder().onPlayPauseButtonClick();
-				if (isVideoMode()) getControlPanel().onVideoSeek();
-				return true;
-			case KeyEvent.KEYCODE_S:
-			case KeyEvent.KEYCODE_DEL:
-				getMediaServiceBinder().getMediaSessionCallback().onStop();
-				return true;
-			case KeyEvent.KEYCODE_X:
-				if (exitPressed) {
-					finish();
-				} else {
-					exitPressed = true;
-					Toast.makeText(getContext(), R.string.press_x_again, Toast.LENGTH_SHORT).show();
-					FermataApplication.get().getHandler().postDelayed(() -> exitPressed = false, 2000);
-				}
-				return true;
-		}
-
-		return super.onKeyDown(code, event, next);
+		return handleKeyEvent(this, event, next);
 	}
 
 	@Override
 	public boolean onKeyUp(int code, KeyEvent event, IntObjectFunction<KeyEvent, Boolean> next) {
-		if ((event.getFlags() & KeyEvent.FLAG_CANCELED_LONG_PRESS) == 0) {
-			switch (code) {
-				case KeyEvent.KEYCODE_M:
-					if (getCurrentFocus() instanceof EditText) return super.onKeyUp(code, event, next);
-				case KeyEvent.KEYCODE_MENU:
-					if (event.isShiftPressed()) {
-						getNavBarMediator().showMenu(this);
-					} else {
-						ControlPanelView cp = getControlPanel();
-						if (cp.isActive()) cp.showMenu();
-						else getNavBarMediator().showMenu(this);
-					}
-					return true;
-			}
-		}
-
-		return super.onKeyUp(code, event, next);
+		return handleKeyEvent(this, event, next);
 	}
 
 	@Override
-	public boolean onKeyLongPress(int code, KeyEvent event, IntObjectFunction<KeyEvent, Boolean> next) {
-		switch (code) {
-			case KeyEvent.KEYCODE_M:
-			case KeyEvent.KEYCODE_MENU:
-				if (getPrefs().getVoiceControlMenuPref()) startVoiceSearch();
-				return true;
-		}
-		return super.onKeyLongPress(code, event, next);
+	public boolean onKeyLongPress(int code, KeyEvent event,
+																IntObjectFunction<KeyEvent, Boolean> next) {
+		return handleKeyEvent(this, event, next);
 	}
 
 	public HandlerExecutor getHandler() {
@@ -1057,20 +1046,40 @@ public class MainActivityDelegate extends ActivityDelegate implements
 		return getHandler().schedule(task, delay);
 	}
 
+	public Cancellable interruptPlayback() {
+		MediaSessionCallback cb = getMediaSessionCallback();
+		if (!cb.isPlaying()) return Cancellable.CANCELED;
+		PlaybackStateCompat playbackState = cb.getPlaybackState();
+		cb.onPause();
+		return () -> {
+			PlaybackStateCompat state = cb.getPlaybackState();
+			if ((state.getState() == PlaybackStateCompat.STATE_PAUSED) &&
+					((state == playbackState) || (state.getPosition() != playbackState.getPosition()))) {
+				cb.onPlay();
+			}
+			return true;
+		};
+	}
+
 	static final class Prefs implements MainActivityPrefs {
 		static final Prefs instance = new Prefs();
 		private final List<ListenerRef<PreferenceStore.Listener>> listeners = new LinkedList<>();
 		private final SharedPreferences prefs = FermataApplication.get().getDefaultSharedPreferences();
 
 		private Prefs() {
+			App.get().getHandler().post(this::migratePrefs);
+		}
+
+		private void migratePrefs() {
 			// Rename old prefs
-			Pref<IntSupplier> oldTheme = Pref.i("THEME", THEME_DARK);
-			Pref<DoubleSupplier> oldScale = Pref.f("MEDIA_ITEM_SCALE", 1f);
-			Pref<IntSupplier> fbLongPress = Pref.i("FB_LONG_PRESS", 0);
-			Pref<IntSupplier> fbLongPressAA = Pref.i("FB_LONG_PRESS_AA", 0);
-			Pref<BooleanSupplier> showClock = Pref.b("SHOW_CLOCK", false);
-			int theme = getIntPref(oldTheme);
-			float scale = getFloatPref(oldScale);
+			var oldTheme = Pref.i("THEME", THEME_DARK);
+			var oldScale = Pref.f("MEDIA_ITEM_SCALE", 1f);
+			var fbLongPress = Pref.i("FB_LONG_PRESS", 0);
+			var fbLongPressAA = Pref.i("FB_LONG_PRESS_AA", 0);
+			var showClock = Pref.b("SHOW_CLOCK", false);
+			var voiceCtrlM = Pref.b("VOICE_CONTROl_M", false);
+			var theme = getIntPref(oldTheme);
+			var scale = getFloatPref(oldScale);
 
 			if ((theme != THEME_DARK) || (scale != 1f)) {
 				try (PreferenceStore.Edit e = editPreferenceStore()) {
@@ -1099,6 +1108,14 @@ public class MainActivityDelegate extends ActivityDelegate implements
 					e.removePref(showClock);
 					e.setIntPref(CLOCK_POS, CLOCK_POS_RIGHT);
 				}
+			}
+
+			if (getBooleanPref(voiceCtrlM)) {
+				removePref(voiceCtrlM);
+				var kp = Key.getPrefs();
+				var o = Action.ACTIVATE_VOICE_CTRL.ordinal();
+				kp.applyIntPref(Key.M.getLongActionPref(), o);
+				kp.applyIntPref(Key.MENU.getLongActionPref(), o);
 			}
 		}
 
@@ -1163,7 +1180,8 @@ public class MainActivityDelegate extends ActivityDelegate implements
 				LinearLayoutCompat layout = new LinearLayoutCompat(ctx);
 				layout.setOrientation(LinearLayoutCompat.VERTICAL);
 				AppCompatImageView img = new AppCompatImageView(ctx);
-				TypedArray ta = ctx.getTheme().obtainStyledAttributes(new int[]{R.attr.colorOnSecondary});
+				TypedArray ta = ctx.getTheme()
+						.obtainStyledAttributes(new int[]{com.google.android.material.R.attr.colorOnSecondary});
 				int imgColor = ta.getColor(0, 0);
 				ta.recycle();
 				img.setMinimumWidth(size);

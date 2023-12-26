@@ -2,8 +2,11 @@ package me.aap.fermata.ui.activity;
 
 import static me.aap.fermata.media.pref.PlaybackControlPrefs.TIME_UNIT_SECOND;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROL_SUBST;
+import static me.aap.fermata.ui.activity.VoiceCommand.ACTION_CHAT;
 import static me.aap.utils.ui.UiUtils.ID_NULL;
 
+import android.content.Context;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 
 import androidx.annotation.IdRes;
@@ -15,6 +18,7 @@ import java.io.StringReader;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,34 +46,45 @@ class VoiceCommandHandler {
 	private static final String NUMBER = "N";
 	private static final String UNIT = "U";
 	private final MainActivityDelegate activity;
-	private final Pattern aFind;
-	private final Pattern aOpen;
-	private final Pattern aPause;
-	private final Pattern aStop;
-	private final Pattern aPlay;
-	private final Pattern aPlayFavorites;
-	private final Pattern aSubOn;
-	private final Pattern aSubOff;
-	private final Pattern aSubChange;
-	private final Pattern aAudioChange;
-	private final Pattern lFolders;
-	private final Pattern lFavorites;
-	private final Pattern lPlaylists;
-	private final Pattern lTV;
-	private final Pattern lYoutube;
-	private final Pattern lBrowser;
-	private final Pattern uMinute;
-	private final Pattern uHour;
-	private final Pattern cCurTrack;
-	private final PatternCompat cFF;
-	private final PatternCompat cRW;
-	private final PatternCompat cFindPlayOpen;
-	private final String[] nums;
+	private String lang;
+	private Pattern aFind;
+	private Pattern aOpen;
+	private Pattern aPause;
+	private Pattern aStop;
+	private Pattern aPlay;
+	private Pattern aPlayFavorites;
+	private Pattern aSubOn;
+	private Pattern aSubOff;
+	private Pattern aSubChange;
+	private Pattern aAudioChange;
+	private Pattern lFolders;
+	private Pattern lFavorites;
+	private Pattern lPlaylists;
+	private Pattern lTV;
+	private Pattern lYoutube;
+	private Pattern lBrowser;
+	private Pattern uMinute;
+	private Pattern uHour;
+	private Pattern cCurTrack;
+	private PatternCompat cFF;
+	private PatternCompat cRW;
+	private PatternCompat cFindPlayOpen;
+	private PatternCompat cChat;
+	private String[] nums;
 	private Map<String, String> subst = Collections.emptyMap();
 
 	VoiceCommandHandler(MainActivityDelegate activity) {
 		this.activity = activity;
-		Resources res = activity.getContext().getResources();
+	}
+
+	private void init() {
+		String lang = activity.getPrefs().getVoiceControlLang(activity);
+		if (lang.equals(this.lang)) return;
+
+		Context ctx = activity.getContext();
+		Configuration cfg = new Configuration(ctx.getResources().getConfiguration());
+		cfg.setLocale(Locale.forLanguageTag(lang));
+		Resources res = ctx.createConfigurationContext(cfg).getResources();
 		aFind = compile(res, R.string.vcmd_action_find);
 		aOpen = compile(res, R.string.vcmd_action_open);
 		aPause = compile(res, R.string.vcmd_action_pause);
@@ -92,6 +107,7 @@ class VoiceCommandHandler {
 		cFF = PatternCompat.compile(res.getString(R.string.vcmd_ff));
 		cRW = PatternCompat.compile(res.getString(R.string.vcmd_rw));
 		cFindPlayOpen = PatternCompat.compile(res.getString(R.string.vcmd_find_play_open));
+		cChat = PatternCompat.compile(res.getString(R.string.vcmd_chat));
 		nums = res.getString(R.string.vcmd_nums).split(" ");
 		updateWordSubst();
 	}
@@ -101,7 +117,19 @@ class VoiceCommandHandler {
 	}
 
 	public boolean handle(String cmd) {
+		init();
 		cmd = subst(cmd);
+
+		AddonManager amgr = AddonManager.get();
+
+		if (amgr.hasAddon(R.id.chat_addon)) {
+			Matcher m = cChat.matcher(cmd);
+			if (m.matches()) {
+				MainActivityFragment f = activity.showFragment(R.id.chat_addon);
+				f.voiceCommand(new VoiceCommand(cChat.group(m, QUERY), ACTION_CHAT));
+				return true;
+			}
+		}
 
 		if (aPlay.matcher(cmd).matches()) {
 			activity.getMediaSessionCallback().play().thenRun(activity::goToCurrent);
@@ -132,8 +160,9 @@ class VoiceCommandHandler {
 		if (mgr.isVlcPlayerSupported() && ((eng = cb.getEngine()) != null)) {
 			if (aSubOn.matcher(cmd).matches()) {
 				if (eng.getCurrentSubtitleStreamInfo() != null) return true;
-				List<SubtitleStreamInfo> sub = eng.getSubtitleStreamInfo();
-				if (!sub.isEmpty()) eng.setCurrentSubtitleStream(sub.get(0));
+				eng.getSubtitleStreamInfo().main().onSuccess(sub -> {
+					if (!sub.isEmpty()) eng.setCurrentSubtitleStream(sub.get(0));
+				});
 				return true;
 			}
 			if (aSubOff.matcher(cmd).matches()) {
@@ -141,13 +170,16 @@ class VoiceCommandHandler {
 				return true;
 			}
 			if (aSubChange.matcher(cmd).matches()) {
-				eng.setCurrentSubtitleStream(next(eng.getSubtitleStreamInfo(),
-						eng.getCurrentSubtitleStreamInfo()));
+				eng.getSubtitleStreamInfo().main().onSuccess(sub -> {
+					if (!sub.isEmpty()) return;
+					var cur = eng.getCurrentSubtitleStreamInfo();
+					if (cur == null) eng.setCurrentSubtitleStream(sub.get(0));
+					else eng.setCurrentSubtitleStream(next(sub, cur));
+				});
 				return true;
 			}
 			if (aAudioChange.matcher(cmd).matches()) {
-				eng.setCurrentAudioStream(next(eng.getAudioStreamInfo(),
-						eng.getCurrentAudioStreamInfo()));
+				eng.setCurrentAudioStream(next(eng.getAudioStreamInfo(), eng.getCurrentAudioStreamInfo()));
 				return true;
 			}
 		}
@@ -191,7 +223,6 @@ class VoiceCommandHandler {
 			else if (matches(lPlaylists, location)) fid = R.id.playlists_fragment;
 
 			if (fid == ID_NULL) {
-				AddonManager amgr = AddonManager.get();
 				if (amgr.hasAddon(R.id.tv_fragment) && matches(lTV, location)) fid = R.id.tv_fragment;
 				else if (amgr.hasAddon(R.id.youtube_fragment) && matches(lYoutube, location))
 					fid = R.id.youtube_fragment;
@@ -216,8 +247,8 @@ class VoiceCommandHandler {
 		MainActivityFragment f = activity.getActiveMainActivityFragment();
 		if ((f == null) || (f.getFragmentId() != id)) {
 			activity.post(() -> searchInFragment(id, cmd, attempt + 1));
-		} else if ((f.getFragmentId() == R.id.folders_fragment)
-				|| (f.getFragmentId() == R.id.playlists_fragment)) {
+		} else if ((f.getFragmentId() == R.id.folders_fragment) ||
+				(f.getFragmentId() == R.id.playlists_fragment)) {
 			MediaLibFragment mf = (MediaLibFragment) f;
 			mf.findFolder(cmd.getQuery()).onSuccess(folder -> {
 				if (folder == null) {

@@ -24,7 +24,7 @@ import me.aap.fermata.media.lib.MediaLib.ArchiveItem;
 import me.aap.fermata.media.lib.MediaLib.PlayableItem;
 import me.aap.fermata.media.lib.MediaLib.StreamItem;
 import me.aap.fermata.media.lib.PlayableItemWrapper;
-import me.aap.fermata.ui.view.VideInfoView;
+import me.aap.fermata.ui.view.VideoInfoView;
 import me.aap.fermata.ui.view.VideoView;
 import me.aap.utils.app.App;
 import me.aap.utils.async.FutureSupplier;
@@ -61,8 +61,7 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 
 	@Override
 	public void prepare(PlayableItem src) {
-		if (src instanceof ArchiveItem) {
-			ArchiveItem a = (ArchiveItem) src;
+		if (src instanceof ArchiveItem a) {
 			setSource(src, a.getStartTime(), a.getEndTime());
 			listener.onEnginePrepared(this);
 		} else {
@@ -118,7 +117,7 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 					lag = lg;
 					position = 0;
 					state = STATE_PLAYING;
-					VideInfoView vi = (videoView != null) ? videoView.getVideoInfoView() : null;
+					VideoInfoView vi = (videoView != null) ? videoView.getVideoInfoView() : null;
 					if (vi != null) vi.onPlayableChanged(src, src);
 				});
 			} else {
@@ -129,7 +128,7 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 					endTime = e.getEndTime();
 					position = 0;
 					startStamp = System.currentTimeMillis();
-					VideInfoView vi = (videoView != null) ? videoView.getVideoInfoView() : null;
+					VideoInfoView vi = (videoView != null) ? videoView.getVideoInfoView() : null;
 					if (vi != null) {
 						src.getMediaDescription().main().and(e.getMediaDescription().main(), (sd, ed) -> {
 							if ((source != src) || !isPlaying()) return;
@@ -352,33 +351,39 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 		return eng.getAudioEffects();
 	}
 
+	public boolean isSubtitlesSupported() {
+		return eng.isSubtitlesSupported();
+	}
+
 	@Override
 	public List<AudioStreamInfo> getAudioStreamInfo() {
 		return eng.getAudioStreamInfo();
 	}
 
 	@Override
-	public List<SubtitleStreamInfo> getSubtitleStreamInfo() {
+	public FutureSupplier<List<SubtitleStreamInfo>> getSubtitleStreamInfo() {
 		return eng.getSubtitleStreamInfo();
 	}
 
+	@Nullable
 	@Override
 	public AudioStreamInfo getCurrentAudioStreamInfo() {
 		return eng.getCurrentAudioStreamInfo();
 	}
 
 	@Override
-	public void setCurrentAudioStream(AudioStreamInfo i) {
+	public void setCurrentAudioStream(@Nullable AudioStreamInfo i) {
 		eng.setCurrentAudioStream(i);
 	}
 
+	@Nullable
 	@Override
 	public SubtitleStreamInfo getCurrentSubtitleStreamInfo() {
 		return eng.getCurrentSubtitleStreamInfo();
 	}
 
 	@Override
-	public void setCurrentSubtitleStream(SubtitleStreamInfo i) {
+	public void setCurrentSubtitleStream(@Nullable SubtitleStreamInfo i) {
 		eng.setCurrentSubtitleStream(i);
 	}
 
@@ -398,11 +403,6 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 	}
 
 	@Override
-	public boolean isSubtitleDelaySupported() {
-		return eng.isSubtitleDelaySupported();
-	}
-
-	@Override
 	public int getSubtitleDelay() {
 		return eng.getSubtitleDelay();
 	}
@@ -418,13 +418,20 @@ public class StreamEngine implements MediaEngine, MediaEngine.Listener {
 	}
 
 	@Override
-	public boolean requestAudioFocus(@Nullable AudioManager audioManager, @Nullable AudioFocusRequestCompat audioFocusReq) {
+	public boolean requestAudioFocus(@Nullable AudioManager audioManager,
+																	 @Nullable AudioFocusRequestCompat audioFocusReq) {
 		return eng.requestAudioFocus(audioManager, audioFocusReq);
 	}
 
 	@Override
-	public void releaseAudioFocus(@Nullable AudioManager audioManager, @Nullable AudioFocusRequestCompat audioFocusReq) {
+	public void releaseAudioFocus(@Nullable AudioManager audioManager,
+																@Nullable AudioFocusRequestCompat audioFocusReq) {
 		eng.releaseAudioFocus(audioManager, audioFocusReq);
+	}
+
+	@Override
+	public boolean hasVideoMenu() {
+		return eng.hasVideoMenu();
 	}
 
 	@Override

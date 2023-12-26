@@ -9,17 +9,16 @@ import static me.aap.fermata.media.pref.MediaPrefs.MEDIA_ENG_VLC;
 import static me.aap.fermata.media.pref.MediaPrefs.MEDIA_SCANNER_DEFAULT;
 import static me.aap.fermata.media.pref.MediaPrefs.MEDIA_SCANNER_SYSTEM;
 import static me.aap.fermata.media.pref.MediaPrefs.MEDIA_SCANNER_VLC;
-import static me.aap.fermata.media.pref.PlaybackControlPrefs.NEXT_VOICE_CONTROl;
-import static me.aap.fermata.media.pref.PlaybackControlPrefs.PREV_VOICE_CONTROl;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.LOCALE_DE;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.LOCALE_EN;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.LOCALE_IT;
+import static me.aap.fermata.ui.activity.MainActivityPrefs.LOCALE_PT;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.LOCALE_RU;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.LOCALE_TR;
+import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROL_LANG;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROL_SUBST;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROl_ENABLED;
 import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROl_FB;
-import static me.aap.fermata.ui.activity.MainActivityPrefs.VOICE_CONTROl_M;
 import static me.aap.utils.ui.UiUtils.ID_NULL;
 
 import android.app.Activity;
@@ -52,6 +51,8 @@ import java.util.zip.ZipOutputStream;
 import me.aap.fermata.BuildConfig;
 import me.aap.fermata.FermataApplication;
 import me.aap.fermata.R;
+import me.aap.fermata.action.Action;
+import me.aap.fermata.action.Key;
 import me.aap.fermata.addon.AddonInfo;
 import me.aap.fermata.addon.AddonManager;
 import me.aap.fermata.addon.FermataAddon;
@@ -84,8 +85,8 @@ import me.aap.utils.ui.fragment.FilePickerFragment;
 /**
  * @author Andrey Pavlenko
  */
-public class SettingsFragment extends MainActivityFragment implements MainActivityListener,
-		PreferenceStore.Listener {
+public class SettingsFragment extends MainActivityFragment
+		implements MainActivityListener, PreferenceStore.Listener {
 	private PreferenceViewAdapter adapter;
 
 	@Override
@@ -96,8 +97,11 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 	@Override
 	public CharSequence getTitle() {
 		if (adapter != null) {
-			PreferenceSet set = adapter.getPreferenceSet();
-			if (set.getParent() != null) return getResources().getString(set.get().title);
+			var set = adapter.getPreferenceSet();
+			if (set.getParent() != null) {
+				var o = set.get();
+				return (o.ctitle != null) ? o.ctitle : getResources().getString(o.title);
+			}
 		}
 		return getResources().getString(R.string.settings);
 	}
@@ -106,7 +110,7 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 	@Override
 	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
 													 @Nullable Bundle savedInstanceState) {
-		return inflater.inflate(R.layout.pref_list_view, container, false);
+		return inflater.inflate(me.aap.utils.R.layout.pref_list_view, container, false);
 	}
 
 	@Override
@@ -122,7 +126,7 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 			a.addBroadcastListener(this);
 			a.getPrefs().addBroadcastListener(this);
 
-			RecyclerView listView = view.findViewById(R.id.prefs_list_view);
+			RecyclerView listView = view.findViewById(me.aap.utils.R.id.prefs_list_view);
 			listView.setHasFixedSize(true);
 			listView.setLayoutManager(new LinearLayoutManager(getContext()));
 			listView.setAdapter(adapter);
@@ -177,8 +181,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 	}
 
 	public static void addDelayPrefs(PreferenceSet set, PreferenceStore store,
-																	 Pref<IntSupplier> pref, @StringRes int title,
-																	 ChangeableCondition visibility) {
+																	 Pref<IntSupplier> pref,
+																	 @StringRes int title, ChangeableCondition visibility) {
 		set.addIntPref(o -> {
 			o.store = store;
 			o.pref = pref;
@@ -242,8 +246,9 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 
 	private PreferenceViewAdapter createAdapter(MainActivityDelegate a) {
 		MediaLibPrefs mediaPrefs = a.getMediaServiceBinder().getLib().getPrefs();
-		int[] timeUnits = new int[]{R.string.time_unit_second, R.string.time_unit_minute,
-				R.string.time_unit_percent};
+		int[] timeUnits =
+				new int[]{R.string.time_unit_second, R.string.time_unit_minute,
+						R.string.time_unit_percent};
 		boolean isCar = a.isCarActivity();
 		PreferenceSet set = new PreferenceSet();
 		PreferenceSet sub1;
@@ -257,15 +262,10 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 			if (BuildConfig.AUTO) {
 				addAAInterface(a, sub1.subSet(o -> o.title = R.string.interface_prefs_aa));
 			}
-			addInterface(a, sub1,
-					MainActivityPrefs.THEME_MAIN,
-					MainActivityPrefs.HIDE_BARS,
-					MainActivityPrefs.FULLSCREEN,
-					MainActivityPrefs.SHOW_PG_UP_DOWN,
-					MainActivityPrefs.NAV_BAR_POS,
-					MainActivityPrefs.NAV_BAR_SIZE,
-					MainActivityPrefs.TOOL_BAR_SIZE,
-					MainActivityPrefs.CONTROL_PANEL_SIZE,
+			addInterface(a, sub1, MainActivityPrefs.THEME_MAIN, MainActivityPrefs.HIDE_BARS,
+					MainActivityPrefs.FULLSCREEN, MainActivityPrefs.SHOW_PG_UP_DOWN, null,
+					MainActivityPrefs.NAV_BAR_POS, MainActivityPrefs.NAV_BAR_SIZE,
+					MainActivityPrefs.TOOL_BAR_SIZE, MainActivityPrefs.CONTROL_PANEL_SIZE,
 					MainActivityPrefs.TEXT_ICON_SIZE);
 		}
 
@@ -279,11 +279,53 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 			o.pref = MainActivityPrefs.LOCALE;
 			o.title = R.string.lang;
 			o.subtitle = R.string.string_format;
-			o.values = new int[]{R.string.lang_en, R.string.lang_de, R.string.lang_it, R.string.lang_ru, R.string.lang_tr};
-			o.valuesMap = new int[]{LOCALE_EN, LOCALE_DE, LOCALE_IT, LOCALE_RU, LOCALE_TR};
+			o.values = new int[]{R.string.lang_en, R.string.lang_de, R.string.lang_it, R.string.lang_ru,
+					R.string.lang_tr, R.string.lang_pt};
+			o.valuesMap = new int[]{LOCALE_EN, LOCALE_DE, LOCALE_IT, LOCALE_RU, LOCALE_TR, LOCALE_PT};
 			o.formatSubtitle = true;
 			o.removeDefault = false;
 		});
+
+		sub1 = set.subSet(o -> o.title = R.string.key_bindings);
+		var actions = Action.getAll();
+		var actionNames = new int[actions.size()];
+		var actionOrdinals = new int[actions.size()];
+		for (var action : actions) {
+			actionNames[action.ordinal()] = action.getName();
+			actionOrdinals[action.ordinal()] = action.ordinal();
+		}
+
+		for (var k : Key.getAll()) {
+			sub2 = sub1.subSet(o -> o.ctitle = k.name());
+			sub2.addListPref(o -> {
+				o.store = Key.getPrefs();
+				o.pref = k.getActionPref();
+				o.title = R.string.key_on_click;
+				o.subtitle = R.string.string_format;
+				o.values = actionNames;
+				o.valuesMap = actionOrdinals;
+				o.formatSubtitle = true;
+			});
+			sub2.addListPref(o -> {
+				o.store = Key.getPrefs();
+				o.pref = k.getLongActionPref();
+				o.title = R.string.key_on_long_click;
+				o.subtitle = R.string.string_format;
+				o.values = actionNames;
+				o.valuesMap = actionOrdinals;
+				o.formatSubtitle = true;
+			});
+			sub2.addListPref(o -> {
+				o.store = Key.getPrefs();
+				o.pref = k.getDblActionPref();
+				o.title = R.string.key_on_dbl_click;
+				o.subtitle = R.string.string_format;
+				o.values = actionNames;
+				o.valuesMap = actionOrdinals;
+				o.formatSubtitle = true;
+			});
+		}
+
 
 		sub1 = set.subSet(o -> o.title = R.string.playback_settings);
 		sub1.addBooleanPref(o -> {
@@ -376,12 +418,48 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 			});
 		}
 
-		PrefCondition<BooleanSupplier> exoCond = PrefCondition.create(mediaPrefs, MediaLibPrefs.EXO_ENABLED);
-		PrefCondition<BooleanSupplier> vlcCond = PrefCondition.create(mediaPrefs, MediaLibPrefs.VLC_ENABLED);
+		if (!a.isCarActivity()) {
+			sub1 = set.subSet(o -> o.title = R.string.voice_control);
+			sub1.addBooleanPref(o -> {
+				o.title = R.string.enable;
+				o.pref = VOICE_CONTROl_ENABLED;
+				o.store = a.getPrefs();
+			});
+			sub1.addBooleanPref(o -> {
+				o.title = R.string.voice_control_fb;
+				o.subtitle = R.string.voice_control_sub_long;
+				o.pref = VOICE_CONTROl_FB;
+				o.store = a.getPrefs();
+				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
+			});
+			sub1.addStringPref(o -> {
+				o.title = R.string.voice_control_subst;
+				o.subtitle = R.string.voice_control_subst_sub;
+				o.hint = R.string.voice_control_subst_hint;
+				o.pref = VOICE_CONTROL_SUBST;
+				o.store = a.getPrefs();
+				o.maxLines = 10;
+				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
+			});
+			sub1.addTtsLocalePref(o -> {
+				o.title = R.string.lang;
+				o.subtitle = me.aap.fermata.R.string.string_format;
+				o.pref = VOICE_CONTROL_LANG;
+				o.store = a.getPrefs();
+				o.formatSubtitle = true;
+				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
+			});
+		}
+
+		PrefCondition<BooleanSupplier> exoCond =
+				PrefCondition.create(mediaPrefs, MediaLibPrefs.EXO_ENABLED);
+		PrefCondition<BooleanSupplier> vlcCond =
+				PrefCondition.create(mediaPrefs, MediaLibPrefs.VLC_ENABLED);
 		Consumer<PreferenceView.ListOpts> initList = o -> {
 			if (o.visibility == null) o.visibility = exoCond.or(vlcCond);
 
-			o.values = new int[]{R.string.engine_mp_name, R.string.engine_exo_name, R.string.engine_vlc_name};
+			o.values =
+					new int[]{R.string.engine_mp_name, R.string.engine_exo_name, R.string.engine_vlc_name};
 			o.valuesMap = new int[]{MEDIA_ENG_MP, MEDIA_ENG_EXO, MEDIA_ENG_VLC};
 			o.valuesFilter = i -> {
 				if (i == 1) return exoCond.get();
@@ -428,7 +506,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 			o.subtitle = R.string.string_format;
 			o.formatSubtitle = true;
 			o.visibility = vlcCond;
-			o.values = new int[]{R.string.preferred_media_scanner_default, R.string.preferred_media_scanner_system, R.string.engine_vlc_name};
+			o.values = new int[]{R.string.preferred_media_scanner_default,
+					R.string.preferred_media_scanner_system, R.string.engine_vlc_name};
 			o.valuesMap = new int[]{MEDIA_SCANNER_DEFAULT, MEDIA_SCANNER_SYSTEM, MEDIA_SCANNER_VLC};
 		});
 
@@ -443,13 +522,24 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 					R.string.video_scaling_orig, R.string.video_scaling_4, R.string.video_scaling_16};
 		});
 		sub1.addListPref(o -> {
+			o.store = mediaPrefs;
+			o.pref = MediaLibPrefs.HW_ACCEL;
+			o.title = R.string.hw_accel;
+			o.subtitle = R.string.string_format;
+			o.formatSubtitle = true;
+			o.values = new int[]{R.string.hw_accel_auto, R.string.hw_accel_full,
+					R.string.hw_accel_decoding, R.string.hw_accel_disabled};
+			o.visibility = vlcCond;
+		});
+		sub1.addListPref(o -> {
 			o.store = a.getPrefs();
 			o.pref = MainActivityPrefs.CLOCK_POS;
 			o.title = R.string.clock_pos;
 			o.subtitle = R.string.string_format;
 			o.formatSubtitle = true;
-			o.values = new int[]{R.string.clock_pos_none, R.string.clock_pos_left,
-					R.string.clock_pos_right, R.string.clock_pos_center};
+			o.values =
+					new int[]{R.string.clock_pos_none, R.string.clock_pos_left, R.string.clock_pos_right,
+							R.string.clock_pos_center};
 		});
 		sub1.addBooleanPref(o -> {
 			o.store = a.getPrefs();
@@ -478,15 +568,9 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 
 		sub2 = sub1.subSet(o -> {
 			o.title = R.string.audio;
-			o.visibility = PrefCondition.create(mediaPrefs, MediaLibPrefs.VLC_ENABLED);
+			o.visibility = vlcCond;
 		});
 		addAudioPrefs(sub2, mediaPrefs, isCar);
-
-		sub2 = sub1.subSet(o -> {
-			o.title = R.string.subtitles;
-			o.visibility = PrefCondition.create(mediaPrefs, MediaLibPrefs.VLC_ENABLED);
-		});
-		addSubtitlePrefs(sub2, mediaPrefs, isCar);
 
 		sub1.addIntPref(o -> {
 			o.store = mediaPrefs;
@@ -498,51 +582,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 			o.seekScale = 5;
 		});
 
-		if (!a.isCarActivity()) {
-			sub1 = set.subSet(o -> o.title = R.string.voice_control);
-			sub1.addBooleanPref(o -> {
-				o.title = R.string.enable;
-				o.pref = VOICE_CONTROl_ENABLED;
-				o.store = a.getPrefs();
-			});
-			sub1.addBooleanPref(o -> {
-				o.title = R.string.voice_control_fb;
-				o.subtitle = R.string.voice_control_sub_long;
-				o.pref = VOICE_CONTROl_FB;
-				o.store = a.getPrefs();
-				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
-			});
-			sub1.addBooleanPref(o -> {
-				o.title = R.string.voice_control_menu;
-				o.subtitle = R.string.voice_control_sub_long;
-				o.pref = VOICE_CONTROl_M;
-				o.store = a.getPrefs();
-				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
-			});
-			sub1.addBooleanPref(o -> {
-				o.title = R.string.voice_control_next;
-				o.subtitle = R.string.voice_control_sub_double;
-				o.pref = NEXT_VOICE_CONTROl;
-				o.store = a.getPlaybackControlPrefs();
-				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
-			});
-			sub1.addBooleanPref(o -> {
-				o.title = R.string.voice_control_prev;
-				o.subtitle = R.string.voice_control_sub_double;
-				o.pref = PREV_VOICE_CONTROl;
-				o.store = a.getPlaybackControlPrefs();
-				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
-			});
-			sub1.addStringPref(o -> {
-				o.title = R.string.voice_control_subst;
-				o.subtitle = R.string.voice_control_subst_sub;
-				o.hint = R.string.voice_control_subst_hint;
-				o.pref = VOICE_CONTROL_SUBST;
-				o.store = a.getPrefs();
-				o.maxLines = 10;
-				o.visibility = PrefCondition.create(a.getPrefs(), VOICE_CONTROl_ENABLED);
-			});
-		}
+		sub1 = set.subSet(o -> o.title = R.string.subtitles);
+		addSubtitlePrefs(sub1, mediaPrefs, isCar);
 
 		addAddons(set);
 
@@ -585,30 +626,20 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 
 	private void addAAInterface(MainActivityDelegate a, PreferenceSet ps) {
 		if (BuildConfig.AUTO) {
-			addInterface(a, ps,
-					MainActivityPrefs.THEME_AA,
-					MainActivityPrefs.HIDE_BARS_AA,
-					MainActivityPrefs.FULLSCREEN_AA,
-					MainActivityPrefs.SHOW_PG_UP_DOWN_AA,
-					MainActivityPrefs.NAV_BAR_POS_AA,
-					MainActivityPrefs.NAV_BAR_SIZE_AA,
-					MainActivityPrefs.TOOL_BAR_SIZE_AA,
-					MainActivityPrefs.CONTROL_PANEL_SIZE_AA,
-					MainActivityPrefs.TEXT_ICON_SIZE_AA);
+			addInterface(a, ps, MainActivityPrefs.THEME_AA, MainActivityPrefs.HIDE_BARS_AA,
+					MainActivityPrefs.FULLSCREEN_AA, MainActivityPrefs.SHOW_PG_UP_DOWN_AA,
+					MainActivityPrefs.USE_DPAD_CURSOR, MainActivityPrefs.NAV_BAR_POS_AA,
+					MainActivityPrefs.NAV_BAR_SIZE_AA, MainActivityPrefs.TOOL_BAR_SIZE_AA,
+					MainActivityPrefs.CONTROL_PANEL_SIZE_AA, MainActivityPrefs.TEXT_ICON_SIZE_AA);
 		}
 	}
 
-	private void addInterface(
-			MainActivityDelegate a, PreferenceSet ps,
-			Pref<IntSupplier> theme,
-			Pref<BooleanSupplier> hideBars,
-			Pref<BooleanSupplier> fullScreen,
-			Pref<BooleanSupplier> pgUpDown,
-			Pref<IntSupplier> nbPos,
-			Pref<DoubleSupplier> nbSize,
-			Pref<DoubleSupplier> tbSize,
-			Pref<DoubleSupplier> cpSize,
-			Pref<DoubleSupplier> textIconSize) {
+	private void addInterface(MainActivityDelegate a, PreferenceSet ps, Pref<IntSupplier> theme,
+														Pref<BooleanSupplier> hideBars, Pref<BooleanSupplier> fullScreen,
+														Pref<BooleanSupplier> pgUpDown, Pref<BooleanSupplier> dpadCursor,
+														Pref<IntSupplier> nbPos, Pref<DoubleSupplier> nbSize,
+														Pref<DoubleSupplier> tbSize, Pref<DoubleSupplier> cpSize,
+														Pref<DoubleSupplier> textIconSize) {
 		ps.addListPref(o -> {
 			o.store = a.getPrefs();
 			o.pref = theme;
@@ -634,13 +665,21 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 			o.pref = pgUpDown;
 			o.title = R.string.show_pg_up_down;
 		});
+		if (dpadCursor != null) {
+			ps.addBooleanPref(o -> {
+				o.store = a.getPrefs();
+				o.pref = dpadCursor;
+				o.title = R.string.use_dpad_cursor;
+			});
+		}
 		ps.addListPref(o -> {
 			o.store = a.getPrefs();
 			o.pref = nbPos;
 			o.title = R.string.nav_bar_pos;
 			o.subtitle = R.string.nav_bar_pos_sub;
 			o.formatSubtitle = true;
-			o.values = new int[]{R.string.nav_bar_pos_bottom, R.string.nav_bar_pos_left, R.string.nav_bar_pos_right};
+			o.values = new int[]{R.string.nav_bar_pos_bottom, R.string.nav_bar_pos_left,
+					R.string.nav_bar_pos_right};
 		});
 		ps.addFloatPref(o -> {
 			o.store = a.getPrefs();
@@ -707,8 +746,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 						if (dir == null) return;
 
 						File prefsDir = PrefUtils.getSharedPrefsFile(ctx, "fermata").getParentFile();
-						File[] files = (prefsDir == null) ? null
-								: prefsDir.listFiles(n -> !n.getName().equals("image-cache.xml"));
+						File[] files = (prefsDir == null) ? null :
+								prefsDir.listFiles(n -> !n.getName().equals("image-cache.xml"));
 
 						if ((files == null) || (files.length == 0)) {
 							UiUtils.showAlert(ctx, R.string.prefs_not_found);
@@ -722,8 +761,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 						DocumentFile f = dir.createFile("application/zip", name);
 
 						if (f == null) {
-							UiUtils.showAlert(ctx, ctx.getString(R.string.export_prefs_failed,
-									"Failed to create file"));
+							UiUtils.showAlert(ctx,
+									ctx.getString(R.string.export_prefs_failed, "Failed to create file"));
 							return;
 						}
 
@@ -735,8 +774,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 						}
 
 						try (OutputStream os = ctx.getContentResolver().openOutputStream(f.getUri());
-								 ZipOutputStream zos = (SDK_INT >= N) ? new ZipOutputStream(os, UTF_8)
-										 : new ZipOutputStream(os)) {
+								 ZipOutputStream zos = (SDK_INT >= N) ? new ZipOutputStream(os, UTF_8) :
+										 new ZipOutputStream(os)) {
 							PrefUtils.exportSharedPrefs(ctx, names, zos);
 						}
 
@@ -749,8 +788,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 	}
 
 	private void importPrefs(MainActivityDelegate a) {
-		a.startActivityForResult(() -> new Intent(Intent.ACTION_OPEN_DOCUMENT)
-				.setType("application/zip"))
+		a.startActivityForResult(
+						() -> new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/zip"))
 				.onCompletion((d, err) -> {
 					Context ctx = a.getContext();
 
@@ -768,8 +807,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 						if (f == null) return;
 
 						try (InputStream is = ctx.getContentResolver().openInputStream(f.getUri());
-								 ZipInputStream zis = (SDK_INT >= N) ? new ZipInputStream(is, UTF_8)
-										 : new ZipInputStream(is)) {
+								 ZipInputStream zis = (SDK_INT >= N) ? new ZipInputStream(is, UTF_8) :
+										 new ZipInputStream(is)) {
 							PrefUtils.importSharedPrefs(ctx, zis);
 						}
 
@@ -785,7 +824,8 @@ public class SettingsFragment extends MainActivityFragment implements MainActivi
 				});
 	}
 
-	private static final class AddonPrefsBuilder implements Consumer<PreferenceView.Opts>, AddonManager.Listener {
+	private static final class AddonPrefsBuilder
+			implements Consumer<PreferenceView.Opts>, AddonManager.Listener {
 		private final AddonManager amgr;
 		private final AddonInfo info;
 		private final PreferenceStore store;

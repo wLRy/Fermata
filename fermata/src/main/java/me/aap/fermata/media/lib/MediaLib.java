@@ -117,8 +117,6 @@ public interface MediaLib {
 
 	long getLastPlayedPosition(PlayableItem i);
 
-	void setLastPlayed(PlayableItem i, long position);
-
 	void getChildren(String parentMediaId, MediaLibResult<List<MediaItem>> result);
 
 	default void getChildren(String parentMediaId, MediaBrowserServiceCompat.Result<List<MediaItem>> result) {
@@ -203,7 +201,7 @@ public interface MediaLib {
 				b.setSubtitle(md.getSubtitle());
 
 				if (FermataContentProvider.isSupportedFileScheme(uri.getScheme())) {
-					b.setIconUri(FermataContentProvider.toContentUri(uri));
+					b.setIconUri(FermataContentProvider.toImgUri(uri));
 				}
 
 				return completed(b.build());
@@ -612,7 +610,7 @@ public interface MediaLib {
 		@DrawableRes
 		@Override
 		default int getIcon() {
-			return R.drawable.folder;
+			return me.aap.utils.R.drawable.folder;
 		}
 
 		@NonNull
@@ -682,7 +680,7 @@ public interface MediaLib {
 
 		@Override
 		default int getIcon() {
-			return R.drawable.folder;
+			return me.aap.utils.R.drawable.folder;
 		}
 
 		@NonNull

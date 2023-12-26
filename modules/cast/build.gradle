@@ -1,0 +1,25 @@
+android {
+    namespace = "me.aap.fermata.addon.cast"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+
+ext {
+    addons = [
+            [
+                    name   : 'cast',
+                    icon   : 'cast',
+                    class  : 'me.aap.fermata.addon.cast.CastAddon',
+                    enabled: false
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':fermata')
+    implementation 'com.google.android.gms:play-services-cast-framework:21.4.0'
+}

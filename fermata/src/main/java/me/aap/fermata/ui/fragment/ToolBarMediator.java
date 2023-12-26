@@ -22,6 +22,9 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
 import me.aap.fermata.R;
+import me.aap.fermata.addon.AddonManager;
+import me.aap.fermata.addon.FermataAddon;
+import me.aap.fermata.addon.FermataToolAddon;
 import me.aap.fermata.media.lib.MediaLib.BrowsableItem;
 import me.aap.fermata.media.lib.MediaLib.StreamItem;
 import me.aap.fermata.media.pref.BrowsableItemPrefs;
@@ -49,27 +52,36 @@ public class ToolBarMediator implements ToolBarView.Mediator.BackTitleFilter {
 	public void enable(ToolBarView tb, ActivityFragment f) {
 		ToolBarView.Mediator.BackTitleFilter.super.enable(tb, f);
 		MainActivityDelegate a = MainActivityDelegate.get(tb.getContext());
-		View first;
-		View last = null;
 		addButton(tb, R.drawable.title, ToolBarMediator::onViewButtonClick, R.id.tool_view);
-		View sort = addButton(tb, R.drawable.sort, ToolBarMediator::onSortButtonClick, R.id.tool_sort);
+		addButton(tb, R.drawable.sort, ToolBarMediator::onSortButtonClick, R.id.tool_sort);
 
 		if ((f instanceof MediaLibFragment) && ((MediaLibFragment) f).isGridSupported()) {
 			int gridIcon = a.isGridView() ? R.drawable.view_list : R.drawable.view_grid;
-			last = addButton(tb, gridIcon, ToolBarMediator::onGridButtonClick, R.id.tool_grid);
+			addButton(tb, gridIcon, ToolBarMediator::onGridButtonClick, R.id.tool_grid);
 		}
 
 		if ((f instanceof MediaLibFragment) && a.getPrefs().getShowPgUpDownPref(a)) {
 			addButton(tb, R.drawable.pg_down, ToolBarMediator::onPgUpDownButtonClick, R.id.tool_pg_down, LEFT);
-			first = addButton(tb, R.drawable.pg_up, ToolBarMediator::onPgUpDownButtonClick, R.id.tool_pg_up, LEFT);
+			addButton(tb, R.drawable.pg_up, ToolBarMediator::onPgUpDownButtonClick, R.id.tool_pg_up, LEFT);
 		} else {
-			first = tb.findViewById(R.id.tool_bar_back_button);
+			tb.findViewById(me.aap.utils.R.id.tool_bar_back_button);
 		}
 
-		if (last == null) last = sort;
-		last.setNextFocusRightId(first.getId());
-		first.setNextFocusLeftId(last.getId());
+		for (FermataAddon addon : AddonManager.get().getAddons()) {
+			if (addon instanceof FermataToolAddon) {
+				((FermataToolAddon) addon).contributeTool(this, tb, f);
+			}
+		}
+
 		setButtonsVisibility(tb, f);
+		int n = tb.getChildCount();
+
+		if (n > 1) {
+			View first = tb.getChildAt(0);
+			View last = tb.getChildAt(n - 1);
+			last.setNextFocusRightId(first.getId());
+			first.setNextFocusLeftId(last.getId());
+		}
 	}
 
 	@Override
@@ -96,7 +108,7 @@ public class ToolBarMediator implements ToolBarView.Mediator.BackTitleFilter {
 		} else if (direction == FOCUS_DOWN) {
 			int id = focused.getId();
 			Context ctx = tb.getContext();
-			if (id == R.id.tool_bar_back_button) {
+			if (id == me.aap.utils.R.id.tool_bar_back_button) {
 				return MediaItemListView.focusSearchFirst(ctx, focused);
 			} else {
 				return MediaItemListView.focusSearchFirstVisible(ctx, focused);
@@ -113,14 +125,19 @@ public class ToolBarMediator implements ToolBarView.Mediator.BackTitleFilter {
 		BrowsableItem b = a.getParent();
 
 		if ((b == null) || (b == b.getRoot()) || (b instanceof StreamItem)) {
-			tb.findViewById(R.id.tool_view).setVisibility(GONE);
-			tb.findViewById(R.id.tool_sort).setVisibility(GONE);
-			tb.findViewById(R.id.tool_grid).setVisibility((b instanceof StreamItem) ? GONE : VISIBLE);
+			setButtonVisibility(tb, R.id.tool_view, GONE);
+			setButtonVisibility(tb, R.id.tool_sort, GONE);
+			setButtonVisibility(tb, R.id.tool_grid, (b instanceof StreamItem) ? GONE : VISIBLE);
 		} else {
-			tb.findViewById(R.id.tool_view).setVisibility(VISIBLE);
-			tb.findViewById(R.id.tool_grid).setVisibility(VISIBLE);
-			tb.findViewById(R.id.tool_sort).setVisibility(b.sortChildrenEnabled() ? VISIBLE : GONE);
+			setButtonVisibility(tb, R.id.tool_view, VISIBLE);
+			setButtonVisibility(tb, R.id.tool_grid, VISIBLE);
+			setButtonVisibility(tb, R.id.tool_sort, b.sortChildrenEnabled() ? VISIBLE : GONE);
 		}
+	}
+
+	private static void setButtonVisibility(ToolBarView tb, @IdRes int id, int visibility) {
+		View v = tb.findViewById(id);
+		if (v != null) v.setVisibility(visibility);
 	}
 
 	private static void onViewButtonClick(View v) {
@@ -254,8 +271,7 @@ public class ToolBarMediator implements ToolBarView.Mediator.BackTitleFilter {
 		});
 	}
 
-	private static void addSortItem(OverlayMenu.Builder b, @IdRes int id, @StringRes int title,
-																	int type, int cur, int m) {
+	private static void addSortItem(OverlayMenu.Builder b, @IdRes int id, @StringRes int title, int type, int cur, int m) {
 		if ((m & (1 << type)) != 0) b.addItem(id, title).setChecked(type == cur, true);
 	}
 
@@ -285,8 +301,7 @@ public class ToolBarMediator implements ToolBarView.Mediator.BackTitleFilter {
 			return true;
 		} else if (itemId == R.id.tool_sort_desc) {
 			BrowsableItem p = adapter.getParent();
-			p.updateSorting().main()
-					.thenRun(() -> p.getPrefs().setSortDescPref(!p.getPrefs().getSortDescPref()));
+			p.updateSorting().main().thenRun(() -> p.getPrefs().setSortDescPref(!p.getPrefs().getSortDescPref()));
 			return true;
 		}
 		return false;

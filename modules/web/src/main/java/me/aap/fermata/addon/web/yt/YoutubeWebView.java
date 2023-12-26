@@ -18,6 +18,7 @@ import me.aap.fermata.BuildConfig;
 import me.aap.fermata.addon.web.FermataChromeClient;
 import me.aap.fermata.addon.web.FermataJsInterface;
 import me.aap.fermata.addon.web.FermataWebView;
+import me.aap.fermata.media.service.MediaSessionCallback;
 import me.aap.fermata.ui.activity.MainActivityDelegate;
 import me.aap.utils.async.FutureSupplier;
 import me.aap.utils.async.Promise;
@@ -56,6 +57,13 @@ public class YoutubeWebView extends FermataWebView {
 	public void loadUrl(@NonNull String url) {
 		Log.d("Loading URL: " + url);
 		super.loadUrl(url);
+	}
+
+	@Override
+	public void goBack() {
+		MediaSessionCallback cb = MainActivityDelegate.get(getContext()).getMediaSessionCallback();
+		if (cb.getEngine() instanceof YoutubeMediaEngine) cb.onStop();
+		super.goBack();
 	}
 
 	@Override
@@ -118,26 +126,47 @@ public class YoutubeWebView extends FermataWebView {
 	}
 
 	void prev() {
-		prevNext(0, 0);
+		prevNext(0);
 	}
 
 	void next() {
-		prevNext(4, 1);
+		prevNext(1);
 	}
 
-	private void prevNext(int idx, int plIdx) {
+	private void prevNext(int plIdx) {
 		FermataChromeClient chrome = getWebChromeClient();
 		if (chrome == null) return;
 
-		chrome.exitFullScreen().thenRun(() -> loadUrl("javascript:\n" +
-				"var c = document.getElementsByClassName('player-controls-middle center');\n" +
-				"if (c.length != 0) c = c[0].querySelectorAll('button');\n" +
-				"if (c.length >= 5) c[" + idx + "].click();  \n" +
-				"else {\n" +
-				"  c = document.getElementsByClassName('playlist-controls-primary');\n" +
-				"  if ((c.length != 0) && (c[0].children.length >= 2)) c[0].children[" + plIdx + "].children[0].click();\n" +
-				"  else " + JS_EVENT + "(" + JS_ERR + ", 'Button not found: playlist-controls-primary');\n" +
-				"}"));
+		chrome.exitFullScreen().thenRun(() -> loadUrl("""
+			javascript:
+			function changeSong() {
+				""" + (plIdx == 0 ? """
+				var prevSong = document.querySelector('.ytm-playlist-panel-video-renderer-v2--selected').previousSibling;
+				if (prevSong !== null) prevSong.getElementsByTagName('a')[0].click();
+				""" : """
+				var nextSong = document.querySelector('.ytm-playlist-panel-video-renderer-v2--selected').nextSibling;
+				if (nextSong !== null) nextSong.getElementsByTagName('a')[0].click();
+				""") + """
+			}
+			
+			if (document.getElementsByTagName('ytm-playlist-engagement-panel').length > 0) {
+				if (document.body.getAttribute('engagement-panel-open') === null) {
+					setTimeout(() => {document.querySelector('[aria-label="Show playlist videos"]').click();}, 600);
+					setTimeout(() => { changeSong(); }, 600);
+				}
+				
+				changeSong();
+			} else {
+				var playerControls = document.getElementsByClassName('player-controls-middle-core-buttons');
+				if (playerControls.length > 0) {
+				""" + (plIdx == 0 ? """
+					playerControls[0].querySelector('[aria-label="Previous video"]').click();
+				""" : """
+					playerControls[0].querySelector('[aria-label="Next video"]').click();
+				""") + """
+				}
+			}
+		"""));
 	}
 
 	FutureSupplier<Long> getDuration() {
